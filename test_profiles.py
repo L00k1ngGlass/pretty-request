@@ -125,5 +125,51 @@ class ScriptedRequestTest(unittest.TestCase):
         self.assertEqual(as_dict(headers)["referer"], "https://example.com/")
 
 
+class FormSubmissionTest(unittest.TestCase):
+    """A submitted form is a navigation, even when it POSTs."""
+
+    def setUp(self):
+        self.headers = headers_for(
+            "Chrome (macOS)",
+            url=URL,
+            method="POST",
+            body=b"q=ada",
+            content_type="application/x-www-form-urlencoded",
+            referer="https://example.com/page",
+            navigation=True,
+        )
+        self.lookup = as_dict(self.headers)
+
+    def test_stays_a_document_navigation(self):
+        self.assertEqual(self.lookup["sec-fetch-mode"], "navigate")
+        self.assertEqual(self.lookup["sec-fetch-dest"], "document")
+        self.assertEqual(self.lookup["sec-fetch-user"], "?1")
+        self.assertEqual(self.lookup["upgrade-insecure-requests"], "1")
+        self.assertNotEqual(self.lookup["accept"], "*/*")  # still asking for a page
+
+    def test_origin_and_site_reflect_where_it_came_from(self):
+        self.assertEqual(self.lookup["origin"], "https://example.com")
+        self.assertEqual(self.lookup["sec-fetch-site"], "same-origin")
+
+    def test_cross_site_referer_is_reported_as_such(self):
+        headers = headers_for(
+            "Chrome (macOS)", url=URL, method="POST", body=b"x=1",
+            referer="https://other.example.org/", navigation=True,
+        )
+        self.assertEqual(as_dict(headers)["sec-fetch-site"], "cross-site")
+
+    def test_referer_sits_just_after_the_sec_fetch_block(self):
+        order = header_names(self.headers)
+        self.assertEqual(order[order.index("Sec-Fetch-Dest") + 1], "Referer")
+
+    def test_a_get_form_submit_is_still_a_navigation_without_origin(self):
+        lookup = as_dict(
+            headers_for("Chrome (macOS)", url=URL, referer="https://example.com/page")
+        )
+        self.assertEqual(lookup["sec-fetch-mode"], "navigate")
+        self.assertEqual(lookup["sec-fetch-site"], "same-origin")
+        self.assertNotIn("origin", lookup)
+
+
 if __name__ == "__main__":
     unittest.main()

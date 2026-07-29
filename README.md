@@ -78,6 +78,7 @@ the robots.txt and terms of the sites you point it at.
 | **Request** | the headers sent, and the request rebuilt as it went onto the wire |
 | **Body** | pretty-printed JSON, aligned form fields, HTML as Reader or coloured Source, text decoded with the declared charset, or a hexdump for binary |
 | **Links** | every link on an HTML page, text and href, in document order, with **Copy link** / **Copy all** (HTML only) |
+| **Forms** | the page's forms, as fillable inputs you can submit (HTML only) |
 | **Raw** | the response as it came off the wire, status line and all |
 
 ### HTML pages
@@ -97,6 +98,40 @@ URLs against the final URL after redirects — or against the page's own
 `<base href>` when it has one — so what you copy works on its own. Double-click
 a row (or **Copy link**) to copy one; **Copy all** copies every href, one per
 line, ready to pipe into something else.
+
+### Filling in forms
+
+The **Forms** tab reads the `<form>` tags off the page you just fetched and
+draws each control as a real widget — text boxes, checkboxes, dropdowns for
+`select` and radio groups, textareas — pre-filled with the page's own defaults.
+Edit what you like and hit **Submit form**; the app builds the request the
+browser would have built and sends it, so the result lands in the history like
+any other. **Copy as cURL** gives you the same request as a command.
+
+[forms.py](forms.py) implements the HTML rules for *successful controls*, which
+is where hand-rolled form posts usually go wrong:
+
+- a control with no `name`, or a `disabled` one, is never submitted;
+- an unchecked checkbox is **absent** rather than false, and a checked one with
+  no `value` submits `on`;
+- a `select` submits its selected option, defaulting to the first;
+- only the submit button you actually clicked contributes its name and value;
+- `method` defaults to GET, and a GET form's fields **replace** the action URL's
+  existing query string instead of appending to it;
+- an empty `action` means the page itself, and a relative one resolves against
+  the page (or its `<base href>`);
+- fields submit in document order, radio groups included;
+- hidden inputs ride along untouched — which is how CSRF tokens survive, and why
+  they are shown in the editor rather than hidden from you.
+
+A submitted form is a **document navigation even when it POSTs**, so it goes out
+with `Sec-Fetch-Mode: navigate`, `Sec-Fetch-Dest: document`, the page as
+`Referer`, and an `Origin` — not the `cors`/`empty` pair a script's `fetch()`
+would send. `Sec-Fetch-Site` is derived from the referer: `same-origin` or
+`cross-site`.
+
+File inputs are the one gap: they need `multipart/form-data`, so they are
+skipped and named in the status line rather than silently dropped.
 
 This is an extractor, not a rendering engine: no layout, no CSS, no JavaScript.
 Actually painting a page in Tk would mean a dependency like `tkinterweb`, which
@@ -121,6 +156,7 @@ dialog box.
 | [exchange.py](exchange.py) | the `Exchange` value object |
 | [formatting.py](formatting.py) | pure rendering helpers (body, raw, cURL, summary, filter) |
 | [htmlreader.py](htmlreader.py) | HTML text extraction, page metadata, source colouring |
+| [forms.py](forms.py) | form parsing and the successful-control submission rules |
 | [theme.py](theme.py) | palette, status colours, fonts, ttk styles |
 | [url_bar.py](url_bar.py), [history.py](history.py), [detail.py](detail.py) | the three panes |
 | [widgets.py](widgets.py) | shared Tk building blocks |
@@ -140,5 +176,5 @@ and what was actually transferred.
 python -m unittest discover -p "test_*.py"
 ```
 
-82 tests: the formatting, HTML and profile helpers run offline, and the fetcher
-tests drive a throwaway `http.server` on localhost.
+108 tests: the formatting, HTML, form and profile helpers run offline, and the
+fetcher tests drive a throwaway `http.server` on localhost.

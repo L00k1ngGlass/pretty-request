@@ -85,6 +85,41 @@ class KeyValueTable(ttk.Frame):
         return tuple(self.tree.item(selection[0], "values"))
 
 
+class ScrollableFrame(ttk.Frame):
+    """A vertically scrolling container. Put your rows in ``.body``."""
+
+    def __init__(self, master):
+        super().__init__(master, style="Panel.TFrame")
+        self._canvas = tk.Canvas(
+            self, background=theme.BG_PANEL, highlightthickness=0, borderwidth=0
+        )
+        scroll = ttk.Scrollbar(self, orient="vertical", command=self._canvas.yview)
+        self._canvas.configure(yscrollcommand=scroll.set)
+        self._canvas.pack(side="left", fill="both", expand=True)
+        scroll.pack(side="right", fill="y")
+
+        self.body = ttk.Frame(self._canvas, style="Panel.TFrame", padding=(12, 10))
+        self._window = self._canvas.create_window((0, 0), window=self.body, anchor="nw")
+        self.body.bind("<Configure>", self._on_body_resize)
+        self._canvas.bind("<Configure>", self._on_canvas_resize)
+        self._canvas.bind("<MouseWheel>", self._on_wheel)
+        self.body.bind("<MouseWheel>", self._on_wheel)
+
+    def clear(self) -> None:
+        for child in self.body.winfo_children():
+            child.destroy()
+        self._canvas.yview_moveto(0)
+
+    def _on_body_resize(self, _event=None) -> None:
+        self._canvas.configure(scrollregion=self._canvas.bbox("all"))
+
+    def _on_canvas_resize(self, event) -> None:
+        self._canvas.itemconfigure(self._window, width=event.width)
+
+    def _on_wheel(self, event) -> None:
+        self._canvas.yview_scroll(-1 * (event.delta if abs(event.delta) < 10 else event.delta // 120), "units")
+
+
 class TextView(ttk.Frame):
     """A read-only monospace text area with both scrollbars."""
 

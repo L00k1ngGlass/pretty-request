@@ -78,6 +78,8 @@ def fetch(
     content_type: str = "",
     timeout: float = DEFAULT_TIMEOUT,
     profile: str = profiles.DEFAULT_PROFILE,
+    referer: str = "",
+    navigation: Optional[bool] = None,
 ) -> Exchange:
     """Send one request and return the resulting :class:`Exchange`.
 
@@ -88,7 +90,13 @@ def fetch(
     url = normalize_url(url)
     body = body if method in BODY_METHODS else None
     wanted = profiles.headers_for(
-        profile, url=url, method=method, content_type=content_type, body=body
+        profile,
+        url=url,
+        method=method,
+        content_type=content_type,
+        body=body,
+        referer=referer,
+        navigation=navigation,
     )
     headers = _wire_headers(wanted)
 

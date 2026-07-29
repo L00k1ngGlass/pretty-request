@@ -109,6 +109,10 @@ class UrlBar(ttk.Frame):
     def set_url(self, url: str) -> None:
         self.url_entry.set_value(url)
 
+    def set_method(self, method: str) -> None:
+        self._method.set(method.upper())
+        self._sync_body_editor()
+
     def profile(self) -> str:
         return self._profile.get()
 
