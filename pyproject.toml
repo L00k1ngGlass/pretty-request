@@ -1,0 +1,16 @@
+[project]
+name = "pretty-request"
+version = "0.1.0"
+description = "A lightweight tkinter inspector for incoming HTTP requests"
+requires-python = ">=3.9"
+dependencies = []
+
+[tool.ruff]
+line-length = 110
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.black]
+line-length = 110
