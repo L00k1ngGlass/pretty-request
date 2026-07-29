@@ -98,6 +98,25 @@ class LinkRowsTest(unittest.TestCase):
             link_rows(PAGE), [("About", "/about"), ("Example", "https://example.com")]
         )
 
+    def test_relative_hrefs_resolve_against_the_page(self):
+        rows = dict((text, href) for text, href in link_rows(PAGE, "https://python.org/downloads/"))
+        self.assertEqual(rows["About"], "https://python.org/about")
+        self.assertEqual(rows["Example"], "https://example.com")  # absolute is left alone
+
+    def test_relative_href_without_leading_slash_is_page_relative(self):
+        rows = link_rows('<a href="next">n</a>', "https://example.com/docs/intro")
+        self.assertEqual(rows[0][1], "https://example.com/docs/next")
+
+    def test_base_tag_wins_over_the_page_url(self):
+        source = '<base href="https://cdn.example.com/v2/"><a href="app.js">js</a>'
+        self.assertEqual(link_rows(source, "https://example.com/")[0][1], "https://cdn.example.com/v2/app.js")
+
+    def test_non_http_schemes_survive_resolution(self):
+        source = '<a href="mailto:ada@example.com">mail</a><a href="#top">top</a>'
+        hrefs = [href for _, href in link_rows(source, "https://example.com/page")]
+        self.assertEqual(hrefs[0], "mailto:ada@example.com")
+        self.assertEqual(hrefs[1], "https://example.com/page#top")
+
     def test_empty_link_text_is_labelled(self):
         self.assertEqual(link_rows('<a href="/x"></a>'), [("(no text)", "/x")])
 

@@ -115,10 +115,23 @@ class FetchTest(unittest.TestCase):
         self.assertEqual(exchange.header("Set-Cookie"), "session=abc; Path=/")
 
     def test_request_headers_are_recorded(self):
-        exchange = fetch("GET", self.base + "/json")
+        exchange = fetch("GET", self.base + "/json", profile="pretty-request")
         self.assertEqual(exchange.request_header("Host"), exchange.url.split("//")[1].split("/")[0])
         self.assertEqual(exchange.request_header("User-Agent"), "pretty-request/0.1")
-        self.assertEqual(exchange.request_header("Accept-Encoding"), "identity")
+        self.assertEqual(exchange.request_header("Accept-Encoding"), "gzip, deflate")
+        self.assertEqual(exchange.profile, "pretty-request")
+
+    def test_recorded_headers_match_what_urllib_really_sends(self):
+        exchange = fetch("GET", self.base + "/json", profile="Chrome (macOS)")
+        names = [name for name, _ in exchange.request_headers]
+        # urllib title-cases field names and forces Connection: close.
+        self.assertIn("Sec-Ch-Ua", names)
+        self.assertNotIn("sec-ch-ua", names)
+        self.assertEqual(exchange.request_headers[-1], ("Connection", "close"))
+
+    def test_the_server_sees_the_profile(self):
+        exchange = fetch("POST", self.base + "/echo", body=b"{}", profile="Firefox (macOS)")
+        self.assertIn("Firefox/", json.loads(exchange.body)["user_agent"])
 
     def test_redirect_chain_is_followed_and_recorded(self):
         exchange = fetch("GET", self.base + "/hop")

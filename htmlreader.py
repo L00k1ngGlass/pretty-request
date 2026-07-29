@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 from html.parser import HTMLParser
 from typing import Dict, List, Tuple
+from urllib.parse import urljoin
 
 # Content in these never belongs in a reader view.
 SKIPPED = {"script", "style", "noscript", "template", "svg", "head"}
@@ -58,6 +59,9 @@ class _Reader(HTMLParser):
             self.meta.setdefault("lang", attributes["lang"])
         elif tag == "meta":
             self._read_meta(attributes)
+        elif tag == "base" and attributes.get("href"):
+            # A <base> tag rebases every relative URL on the page.
+            self.meta.setdefault("base", attributes["href"])
         elif tag == "a" and attributes.get("href"):
             self._buffer = []
             self._pending_href = attributes["href"]
@@ -177,9 +181,15 @@ def page_rows(source: str) -> List[Tuple[str, str]]:
     return rows
 
 
-def link_rows(source: str, limit: int = 200) -> List[Tuple[str, str]]:
-    """``(link text, href)`` pairs, in document order."""
-    return [(text, href) for text, href in _parse(source).links[:limit]]
+def link_rows(source: str, base_url: str = "", limit: int = 200) -> List[Tuple[str, str]]:
+    """``(link text, href)`` pairs in document order, resolved against the page.
+
+    Relative hrefs are joined onto ``base_url`` — or onto the page's own
+    ``<base href>`` when it has one — so a copied link is usable on its own.
+    """
+    reader = _parse(source)
+    base = urljoin(base_url, reader.meta.get("base", "")) if base_url else reader.meta.get("base", "")
+    return [(text, urljoin(base, href) if base else href) for text, href in reader.links[:limit]]
 
 
 def highlight(source: str, limit: int = 200_000) -> List[Span]:

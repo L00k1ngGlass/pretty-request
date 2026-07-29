@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import tkinter as tk
 from tkinter import ttk
-from typing import Iterable, Tuple
+from typing import Iterable, List, Optional, Tuple
 
 import theme
 
@@ -74,6 +74,15 @@ class KeyValueTable(ttk.Frame):
 
     def clear(self) -> None:
         self.tree.delete(*self.tree.get_children())
+
+    def rows(self) -> List[Tuple[str, str]]:
+        return [tuple(self.tree.item(item, "values")) for item in self.tree.get_children()]
+
+    def selected_row(self) -> Optional[Tuple[str, str]]:
+        selection = self.tree.selection()
+        if not selection:
+            return None
+        return tuple(self.tree.item(selection[0], "values"))
 
 
 class TextView(ttk.Frame):

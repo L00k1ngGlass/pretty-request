@@ -13,21 +13,13 @@ from datetime import datetime
 from typing import List, Optional, Tuple
 from urllib.parse import urlsplit, urlunsplit
 
+import profiles
 from exchange import Exchange, Redirect
 
 METHODS = ("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
 BODY_METHODS = ("POST", "PUT", "PATCH", "DELETE")
 DEFAULT_TIMEOUT = 15
 DEFAULT_SCHEME = "https"
-
-# Sent on every request. identity encoding keeps bodies readable — urllib will
-# not decompress gzip for us, and a hexdump of gzip helps nobody.
-DEFAULT_HEADERS = (
-    ("User-Agent", "pretty-request/0.1"),
-    ("Accept", "*/*"),
-    ("Accept-Encoding", "identity"),
-    ("Connection", "close"),
-)
 
 
 class InvalidURL(ValueError):
@@ -85,6 +77,7 @@ def fetch(
     body: Optional[bytes] = None,
     content_type: str = "",
     timeout: float = DEFAULT_TIMEOUT,
+    profile: str = profiles.DEFAULT_PROFILE,
 ) -> Exchange:
     """Send one request and return the resulting :class:`Exchange`.
 
@@ -94,10 +87,13 @@ def fetch(
     method = method.upper()
     url = normalize_url(url)
     body = body if method in BODY_METHODS else None
-    headers = _request_headers(url, content_type, body)
+    wanted = profiles.headers_for(
+        profile, url=url, method=method, content_type=content_type, body=body
+    )
+    headers = _wire_headers(wanted)
 
     request = urllib.request.Request(url, data=body, method=method)
-    for name, value in headers:
+    for name, value in wanted:
         if name.lower() != "host":  # urllib derives Host from the URL itself
             request.add_header(name, value)
 
@@ -114,6 +110,7 @@ def fetch(
             url=url,
             request_headers=headers,
             request_body=body or b"",
+            profile=profile,
             redirects=tracker.chain,
             remote_ip=_resolve(url),
             elapsed_ms=(time.perf_counter() - clock) * 1000,
@@ -168,13 +165,15 @@ def _decompress(raw: bytes, encoding: str) -> bytes:
     return raw
 
 
-def _request_headers(url: str, content_type: str, body: Optional[bytes]) -> List[Tuple[str, str]]:
-    headers = [("Host", urlsplit(url).netloc)]
-    headers += list(DEFAULT_HEADERS)
-    if body is not None:
-        headers.append(("Content-Type", content_type or "application/octet-stream"))
-        headers.append(("Content-Length", str(len(body))))
-    return headers
+def _wire_headers(headers: List[Tuple[str, str]]) -> List[Tuple[str, str]]:
+    """What urllib will really send, so the Request tab does not lie.
+
+    ``do_open`` title-cases every field name (``sec-ch-ua`` → ``Sec-Ch-Ua``;
+    legal, since field names are case-insensitive) and appends ``Connection:
+    close``, because it does not pool connections. Both are visible to a server
+    doing HTTP/1.1 fingerprinting, so we record them rather than our intent.
+    """
+    return [(name.title(), value) for name, value in headers] + [("Connection", "close")]
 
 
 def _http_version(response) -> str:

@@ -14,6 +14,7 @@ from tkinter import ttk
 from typing import Optional
 
 import fetcher
+import profiles
 import theme
 from detail import DetailView
 from exchange import Exchange
@@ -26,7 +27,12 @@ FLASH_MS = 1400
 
 
 class App(tk.Tk):
-    def __init__(self, url: str = "", timeout: float = fetcher.DEFAULT_TIMEOUT):
+    def __init__(
+        self,
+        url: str = "",
+        timeout: float = fetcher.DEFAULT_TIMEOUT,
+        profile: str = profiles.DEFAULT_PROFILE,
+    ):
         super().__init__()
         self.title("pretty-request")
         self.geometry("1180x760")
@@ -40,7 +46,7 @@ class App(tk.Tk):
         # Worker threads put finished exchanges here; the Tk loop drains them.
         self._inbox: "queue.Queue[Exchange]" = queue.Queue()
 
-        self.url_bar = UrlBar(self, on_send=self.send, on_clear=self.clear)
+        self.url_bar = UrlBar(self, on_send=self.send, on_clear=self.clear, profile=profile)
         self.url_bar.pack(fill="x")
 
         panes = ttk.PanedWindow(self, orient="horizontal")
@@ -78,16 +84,31 @@ class App(tk.Tk):
 
         thread = threading.Thread(
             target=self._work,
-            args=(self._seq, self.url_bar.method(), url, self.url_bar.body(), self.url_bar.content_type()),
+            args=(
+                self._seq,
+                self.url_bar.method(),
+                url,
+                self.url_bar.body(),
+                self.url_bar.content_type(),
+                self.url_bar.profile(),
+            ),
             name="fetch-%d" % self._seq,
             daemon=True,
         )
         thread.start()
 
-    def _work(self, seq: int, method: str, url: str, body: Optional[bytes], content_type: str) -> None:
+    def _work(
+        self, seq: int, method: str, url: str, body: Optional[bytes], content_type: str, profile: str
+    ) -> None:
         self._inbox.put(
             fetcher.fetch(
-                method, url, seq=seq, body=body, content_type=content_type, timeout=self._timeout
+                method,
+                url,
+                seq=seq,
+                body=body,
+                content_type=content_type,
+                timeout=self._timeout,
+                profile=profile,
             )
         )
 
@@ -148,8 +169,15 @@ def main() -> None:
         default=fetcher.DEFAULT_TIMEOUT,
         help="request timeout in seconds (default: %(default)s)",
     )
+    parser.add_argument(
+        "-p",
+        "--profile",
+        choices=profiles.names(),
+        default=profiles.DEFAULT_PROFILE,
+        help="header profile to send as (default: %(default)s)",
+    )
     args = parser.parse_args()
-    App(url=args.url, timeout=args.timeout).mainloop()
+    App(url=args.url, timeout=args.timeout, profile=args.profile).mainloop()
 
 
 if __name__ == "__main__":

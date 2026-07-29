@@ -20,6 +20,7 @@ class Exchange:
     url: str  # what we asked for, after normalisation
     request_headers: List[Header] = field(default_factory=list)
     request_body: bytes = b""
+    profile: str = ""  # which header profile we presented as
 
     status: int = 0  # 0 means the request never got a response
     reason: str = ""
