@@ -9,6 +9,8 @@ from exchange import Exchange
 from formatting import (
     human_size,
     human_time,
+    is_html,
+    link_rows,
     matches,
     redirect_rows,
     render_body,
@@ -76,22 +78,79 @@ class ExchangeTest(unittest.TestCase):
 
 class RenderBodyTest(unittest.TestCase):
     def test_json_is_pretty_printed(self):
-        label, rendered = render_body(make_exchange())
+        label, rendered, spans = render_body(make_exchange())
         self.assertTrue(label.startswith("JSON"))
         self.assertEqual(rendered, '{\n  "page": 2\n}')
+        self.assertEqual(spans, [])
 
-    def test_html_is_shown_as_text(self):
+    def test_plain_text_is_left_alone(self):
         exchange = make_exchange(
-            response_headers=[("Content-Type", "text/html; charset=utf-8")], body=b"<h1>hi</h1>"
+            response_headers=[("Content-Type", "text/plain; charset=utf-8")], body=b"just words"
         )
-        label, rendered = render_body(exchange)
-        self.assertEqual(label, "text/html (utf-8) · 11 B")
-        self.assertEqual(rendered, "<h1>hi</h1>")
+        label, rendered, _ = render_body(exchange)
+        self.assertEqual(label, "text/plain (utf-8) · 10 B")
+        self.assertEqual(rendered, "just words")
 
     def test_empty_and_binary_and_failed(self):
         self.assertEqual(render_body(make_exchange(body=b""))[1], "(empty)")
         self.assertIn("00000000  00 01 ff", render_body(make_exchange(body=b"\x00\x01\xff"))[1])
         self.assertEqual(render_body(make_exchange(error="timed out"))[1], "timed out")
+
+
+HTML_PAGE = b"""<!doctype html>
+<html lang="en"><head><title>Ada &amp; Co</title>
+<meta name="description" content="A short page">
+<style>.x{color:red}</style><script>var hidden = 1;</script></head>
+<body><h1>Welcome</h1><p>Hello <b>world</b>.</p>
+<ul><li>one</li><li>two</li></ul>
+<a href="/about">About us</a><img src="a.png" alt="a cat">
+</body></html>"""
+
+
+class RenderHtmlBodyTest(unittest.TestCase):
+    def setUp(self):
+        self.exchange = make_exchange(
+            response_headers=[("Content-Type", "text/html; charset=utf-8")], body=HTML_PAGE
+        )
+
+    def test_detected_as_html(self):
+        self.assertTrue(is_html(self.exchange))
+        self.assertFalse(is_html(make_exchange()))
+
+    def test_reader_mode_strips_markup_and_scripts(self):
+        label, rendered, spans = render_body(self.exchange, "Reader")
+        self.assertIn("HTML reader view", label)
+        self.assertEqual(spans, [])
+        self.assertIn("# Welcome", rendered)
+        self.assertIn("Hello world.", rendered)
+        self.assertIn("• one", rendered)
+        self.assertIn("[image: a cat]", rendered)
+        self.assertNotIn("var hidden", rendered)
+        self.assertNotIn("color:red", rendered)
+        self.assertNotIn("<", rendered)
+
+    def test_source_mode_returns_markup_with_spans(self):
+        label, rendered, spans = render_body(self.exchange, "Source")
+        self.assertTrue(label.startswith("HTML source"))
+        self.assertEqual(rendered, HTML_PAGE.decode())
+        kinds = {kind for kind, _, _ in spans}
+        self.assertTrue({"tag", "attr", "value", "doctype"} <= kinds)
+        for _, start, end in spans:
+            self.assertLessEqual(end, len(rendered))
+            self.assertLess(start, end)
+
+    def test_summary_gains_page_metadata(self):
+        rows = dict(summary_rows(self.exchange))
+        self.assertEqual(rows["Page title"], "Ada & Co")
+        self.assertEqual(rows["Description"], "A short page")
+        self.assertEqual(rows["Language"], "en")
+        self.assertEqual(rows["Links"], "1")
+        self.assertEqual(rows["Images"], "1")
+        self.assertEqual(rows["Headings"], "Welcome")
+
+    def test_links_are_listed(self):
+        self.assertEqual(link_rows(self.exchange), [("About us", "/about")])
+        self.assertEqual(link_rows(make_exchange()), [])
 
 
 class RenderMessagesTest(unittest.TestCase):

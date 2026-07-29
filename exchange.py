@@ -26,7 +26,9 @@ class Exchange:
     http_version: str = ""
     final_url: str = ""
     response_headers: List[Header] = field(default_factory=list)
-    body: bytes = b""
+    body: bytes = b""  # already decompressed
+    content_encoding: str = ""  # set only when we decompressed something
+    encoded_size: int = 0  # bytes actually transferred, when compressed
     redirects: List[Redirect] = field(default_factory=list)
     remote_ip: str = ""
     elapsed_ms: float = 0.0

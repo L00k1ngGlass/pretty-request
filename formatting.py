@@ -7,10 +7,13 @@ import shlex
 from typing import List, Optional, Tuple
 from urllib.parse import parse_qsl, urlsplit
 
+import htmlreader
 from exchange import Exchange
+from htmlreader import Span
 
 HEXDUMP_LIMIT = 4096
 SKIPPED_CURL_HEADERS = ("host", "content-length", "connection")
+HTML_MODES = ("Reader", "Source")
 
 
 def human_size(size: int) -> str:
@@ -43,33 +46,50 @@ def hexdump(data: bytes, limit: int = HEXDUMP_LIMIT) -> str:
 # -- bodies ----------------------------------------------------------------
 
 
-def render_body(exchange: Exchange) -> Tuple[str, str]:
-    """Return ``(label, rendered body)`` — pretty JSON and forms where possible."""
+def is_html(exchange: Exchange) -> bool:
+    """Whether the body should be offered in Reader/Source modes."""
+    text = exchange.text()
+    return text is not None and htmlreader.looks_like_html(exchange.content_type, text)
+
+
+def render_body(exchange: Exchange, html_mode: str = "Reader") -> Tuple[str, str, List[Span]]:
+    """Return ``(label, rendered body, colour spans)``.
+
+    JSON and forms are pretty-printed, HTML is either read or syntax-coloured,
+    and anything undecodable falls back to a hexdump.
+    """
     if exchange.error is not None:
-        return "no response", exchange.error
+        return "no response", exchange.error, []
     if not exchange.body:
-        return "no body", "(empty)"
+        return "no body", "(empty)", []
 
     size = human_size(len(exchange.body))
     text = exchange.text()
     if text is None:
-        return "binary · %s" % size, hexdump(exchange.body)
+        return "binary · %s" % size, hexdump(exchange.body), []
 
     if "json" in exchange.content_type or text.lstrip()[:1] in "{[":
         pretty = _try_json(text)
         if pretty is not None:
-            return "JSON · %s" % size, pretty
+            return "JSON · %s" % size, pretty, []
 
     if exchange.content_type == "application/x-www-form-urlencoded":
         pretty = _try_form(text)
         if pretty is not None:
             fields = pretty.count("\n") + 1
-            return "form · %d field%s" % (fields, "" if fields == 1 else "s"), pretty
+            return "form · %d field%s" % (fields, "" if fields == 1 else "s"), pretty, []
+
+    if is_html(exchange):
+        if html_mode == "Source":
+            return "HTML source · %s" % size, text, htmlreader.highlight(text)
+        reader = htmlreader.to_text(text)
+        words = len(reader.split())
+        return "HTML reader view · %d words · %s" % (words, size), reader, []
 
     label = exchange.content_type or "text"
     if exchange.charset:
         label += " (%s)" % exchange.charset
-    return "%s · %s" % (label, size), text
+    return "%s · %s" % (label, size), text, []
 
 
 def _try_json(text: str) -> Optional[str]:
@@ -154,11 +174,26 @@ def summary_rows(exchange: Exchange) -> List[Tuple[str, str]]:
         ("Redirects", str(len(exchange.redirects)) if exchange.redirects else "none"),
         ("Content type", exchange.header("Content-Type") or "—"),
         ("Body size", human_size(len(exchange.body))),
+    ]
+    if exchange.content_encoding:
+        rows.append(
+            ("Transferred", "%s %s" % (human_size(exchange.encoded_size), exchange.content_encoding))
+        )
+    rows += [
         ("Server", exchange.header("Server") or "—"),
         ("Cookies set", str(count_cookies(exchange))),
         ("Response headers", str(len(exchange.response_headers))),
     ]
+    if is_html(exchange):
+        rows += htmlreader.page_rows(exchange.text() or "")
     return rows
+
+
+def link_rows(exchange: Exchange) -> List[Tuple[str, str]]:
+    """Links found in an HTML body — empty for anything else."""
+    if not is_html(exchange):
+        return []
+    return htmlreader.link_rows(exchange.text() or "")
 
 
 def redirect_rows(exchange: Exchange) -> List[Tuple[str, str]]:

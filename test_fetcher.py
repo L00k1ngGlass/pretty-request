@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import gzip
 import json
 import socket
 import threading
@@ -27,6 +28,12 @@ class _TargetHandler(BaseHTTPRequestHandler):
             self._send(404, b"nope", "text/plain")
         elif self.path == "/boom":
             self._send(500, b"kaboom", "text/plain")
+        elif self.path == "/gzip":
+            self._send(200, gzip.compress(b'{"ok":true}'), "application/json", encoding="gzip")
+        elif self.path == "/gzip-unlabelled":
+            self._send(200, gzip.compress(b"sneaky"), "text/plain")
+        elif self.path == "/broken-gzip":
+            self._send(200, b"\x1f\x8bnot really gzip", "text/plain")
         else:
             self._send(200, b"<h1>hi</h1>", "text/html; charset=utf-8")
 
@@ -39,9 +46,11 @@ class _TargetHandler(BaseHTTPRequestHandler):
         }
         self._send(201, json.dumps(echo).encode(), "application/json")
 
-    def _send(self, status, body, content_type):
+    def _send(self, status, body, content_type, encoding=""):
         self.send_response(status)
         self.send_header("Content-Type", content_type)
+        if encoding:
+            self.send_header("Content-Encoding", encoding)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Set-Cookie", "session=abc; Path=/")
         self.end_headers()
@@ -140,6 +149,23 @@ class FetchTest(unittest.TestCase):
         exchange = fetch("GET", self.base + "/json", body=b"ignored")
         self.assertEqual(exchange.request_body, b"")
         self.assertIsNone(exchange.request_header("Content-Type"))
+
+    def test_gzip_bodies_are_decompressed(self):
+        exchange = fetch("GET", self.base + "/gzip")
+        self.assertEqual(exchange.body, b'{"ok":true}')
+        self.assertEqual(exchange.content_encoding, "gzip")
+        self.assertLess(exchange.encoded_size, len(exchange.body) + 40)
+        self.assertGreater(exchange.encoded_size, 0)
+
+    def test_gzip_is_sniffed_when_the_header_is_missing(self):
+        exchange = fetch("GET", self.base + "/gzip-unlabelled")
+        self.assertEqual(exchange.body, b"sneaky")
+
+    def test_undecompressable_body_is_left_intact(self):
+        exchange = fetch("GET", self.base + "/broken-gzip")
+        self.assertEqual(exchange.body, b"\x1f\x8bnot really gzip")
+        self.assertEqual(exchange.content_encoding, "")
+        self.assertEqual(exchange.encoded_size, 0)
 
     def test_connection_failure_becomes_a_failed_exchange(self):
         with socket.socket() as sock:  # bind a port, then let it close: nothing listens

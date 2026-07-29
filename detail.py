@@ -9,8 +9,11 @@ from typing import Callable, Optional
 import theme
 from exchange import Exchange
 from formatting import (
+    HTML_MODES,
     human_size,
     human_time,
+    is_html,
+    link_rows,
     redirect_rows,
     render_body,
     render_curl,
@@ -29,6 +32,7 @@ class DetailView(ttk.Frame):
         self._on_copy = on_copy
         self._exchange: Optional[Exchange] = None
         self._body_label = tk.StringVar(value="")
+        self._html_mode = tk.StringVar(value=HTML_MODES[0])
 
         header = ttk.Frame(self)
         header.pack(fill="x", pady=(0, 8))
@@ -54,12 +58,15 @@ class DetailView(ttk.Frame):
         )
         self._timing.pack(side="right")
 
-        notebook = ttk.Notebook(self)
+        self._notebook = notebook = ttk.Notebook(self)
         notebook.pack(fill="both", expand=True)
         notebook.add(self._build_summary(notebook), text="Summary")
         notebook.add(self._build_response_headers(notebook), text="Response headers")
         notebook.add(self._build_request(notebook), text="Request")
         notebook.add(self._build_body(notebook), text="Body")
+        self._links_pane = self._build_links(notebook)
+        notebook.add(self._links_pane, text="Links")
+        notebook.hide(self._links_pane)  # only shown for HTML bodies
         notebook.add(self._build_raw(notebook), text="Raw")
 
         actions = ttk.Frame(self, padding=(0, 8, 0, 0))
@@ -95,9 +102,30 @@ class DetailView(ttk.Frame):
 
     def _build_body(self, master) -> ttk.Frame:
         pane = ttk.Frame(master, padding=(0, 8, 0, 0))
-        ttk.Label(pane, textvariable=self._body_label, style="Muted.TLabel").pack(anchor="w", pady=(0, 6))
+
+        controls = ttk.Frame(pane)
+        controls.pack(fill="x", pady=(0, 6))
+        ttk.Label(controls, textvariable=self._body_label, style="Muted.TLabel").pack(side="left")
+        # Reader/Source only make sense for markup, so this row hides otherwise.
+        self._modes = ttk.Frame(controls)
+        for mode in HTML_MODES:
+            ttk.Radiobutton(
+                self._modes,
+                text=mode,
+                value=mode,
+                variable=self._html_mode,
+                style="Toolbutton",
+                command=self._render_body,
+            ).pack(side="left", padx=(4, 0))
+
         self._body = TextView(pane)
         self._body.pack(fill="both", expand=True)
+        return pane
+
+    def _build_links(self, master) -> ttk.Frame:
+        pane = ttk.Frame(master, padding=(0, 8, 0, 0))
+        self._links = KeyValueTable(pane, "TEXT", "HREF", key_width=260)
+        self._links.pack(fill="both", expand=True)
         return pane
 
     def _build_raw(self, master) -> ttk.Frame:
@@ -126,10 +154,28 @@ class DetailView(ttk.Frame):
         self._request_headers.set_rows(exchange.request_headers)
         self._request_raw.set_content(render_request(exchange))
 
-        label, rendered = render_body(exchange)
-        self._body_label.set(label)
-        self._body.set_content(rendered)
+        self._render_body()
         self._raw.set_content(render_response(exchange))
+
+        links = link_rows(exchange)
+        self._links.set_rows(links)
+        if links:
+            self._notebook.add(self._links_pane, text="Links (%d)" % len(links))
+        else:
+            self._notebook.hide(self._links_pane)
+
+    def _render_body(self) -> None:
+        """(Re)draw the body pane in whichever mode is selected."""
+        if self._exchange is None:
+            return
+        markup = is_html(self._exchange)
+        if markup:
+            self._modes.pack(side="right")
+        else:
+            self._modes.pack_forget()
+        label, rendered, spans = render_body(self._exchange, self._html_mode.get())
+        self._body_label.set(label)
+        self._body.set_content(rendered, spans)
 
     def clear(self) -> None:
         self._exchange = None
@@ -137,7 +183,9 @@ class DetailView(ttk.Frame):
         self._url.configure(text=EMPTY_URL, foreground=theme.FG_MUTED)
         self._timing.configure(text="")
         self._body_label.set("")
-        for table in (self._summary, self._redirects, self._response_headers, self._request_headers):
+        self._modes.pack_forget()
+        self._notebook.hide(self._links_pane)
+        for table in (self._summary, self._redirects, self._response_headers, self._request_headers, self._links):
             table.clear()
         for view in (self._body, self._raw, self._request_raw):
             view.set_content("")

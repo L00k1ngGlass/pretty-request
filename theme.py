@@ -39,6 +39,16 @@ STATUS_COLORS = {
     5: "#f7768e",  # server error
 }
 
+# Markup colouring for the Source view.
+SYNTAX = {
+    "tag": "#7aa2f7",
+    "attr": "#e3b341",
+    "value": "#7ee787",
+    "comment": "#5d6577",
+    "doctype": "#d2a8ff",
+    "punct": "#8b93a7",
+}
+
 MONO_STACK = ("SF Mono", "Menlo", "Monaco", "Consolas", "DejaVu Sans Mono", "Courier")
 UI_STACK = ("SF Pro Text", "Helvetica Neue", "Segoe UI", "DejaVu Sans", "Helvetica")
 
@@ -135,6 +145,23 @@ def _configure(style: ttk.Style, f: Fonts) -> None:
         "Accent.TButton",
         background=[("active", "#8fb3ff"), ("pressed", "#6b93e8"), ("disabled", BG_INPUT)],
         foreground=[("disabled", FG_MUTED)],
+    )
+
+    # Segmented control for the body view modes.
+    style.configure(
+        "Toolbutton",
+        background=BG_INPUT,
+        foreground=FG_MUTED,
+        bordercolor=BORDER,
+        focuscolor=BG_INPUT,
+        relief="flat",
+        padding=(12, 3),
+        font=f.ui,
+    )
+    style.map(
+        "Toolbutton",
+        background=[("selected", ACCENT), ("active", BG_SELECT)],
+        foreground=[("selected", "#0d1017"), ("active", FG)],
     )
 
     style.configure(

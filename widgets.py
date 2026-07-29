@@ -103,11 +103,18 @@ class TextView(ttk.Frame):
         xscroll.grid(row=1, column=0, sticky="ew")
         self.rowconfigure(0, weight=1)
         self.columnconfigure(0, weight=1)
+        for kind, color in theme.SYNTAX.items():
+            self.text.tag_configure(kind, foreground=color)
         self.text.configure(state="disabled")
 
-    def set_content(self, content: str) -> None:
+    def set_content(self, content: str, spans: Iterable[Tuple[str, int, int]] = ()) -> None:
+        """Replace the contents, optionally colouring ``(kind, start, end)`` spans."""
         self.text.configure(state="normal")
         self.text.delete("1.0", "end")
         self.text.insert("1.0", content)
+        for kind in theme.SYNTAX:
+            self.text.tag_remove(kind, "1.0", "end")
+        for kind, start, end in spans:
+            self.text.tag_add(kind, "1.0 + %d chars" % start, "1.0 + %d chars" % end)
         self.text.configure(state="disabled")
         self.text.yview_moveto(0)

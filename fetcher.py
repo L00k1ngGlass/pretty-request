@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import gzip
 import socket
 import ssl
 import time
+import zlib
 import urllib.error
 import urllib.request
 from datetime import datetime
@@ -131,14 +133,39 @@ def fetch(
 
 
 def _from_response(response) -> dict:
+    raw = response.read()
+    encoding = (response.headers.get("Content-Encoding") or "").strip().lower()
+    body = _decompress(raw, encoding)
     return dict(
         status=response.status,
         reason=response.reason or "",
         http_version=_http_version(response),
         final_url=response.geturl(),
         response_headers=list(response.headers.items()),
-        body=response.read(),
+        body=body,
+        content_encoding=encoding if body is not raw else "",
+        encoded_size=len(raw) if body is not raw else 0,
     )
+
+
+def _decompress(raw: bytes, encoding: str) -> bytes:
+    """Undo Content-Encoding. CDNs compress even when asked for identity.
+
+    Returns ``raw`` itself when there is nothing to do or the payload will not
+    decompress — the hexdump then shows exactly what arrived.
+    """
+    gzipped = encoding == "gzip" or (not encoding and raw[:2] == b"\x1f\x8b")
+    try:
+        if gzipped:
+            return gzip.decompress(raw)
+        if encoding in ("deflate", "zlib"):
+            try:
+                return zlib.decompress(raw)
+            except zlib.error:  # raw deflate stream, no zlib wrapper
+                return zlib.decompress(raw, -zlib.MAX_WBITS)
+    except (OSError, EOFError, zlib.error):
+        return raw
+    return raw
 
 
 def _request_headers(url: str, content_type: str, body: Optional[bytes]) -> List[Tuple[str, str]]:
