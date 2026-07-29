@@ -162,6 +162,7 @@ def summary_rows(exchange: Exchange) -> List[Tuple[str, str]]:
         ("Sent at", sent_at),
         ("Elapsed", human_time(exchange.elapsed_ms)),
         ("Resolved IP", exchange.remote_ip or "—"),
+        ("Sent as", "%s · %d headers" % (exchange.profile, len(exchange.request_headers))),
     ]
     if exchange.error is not None:
         rows.append(("Error", exchange.error))
@@ -190,10 +191,10 @@ def summary_rows(exchange: Exchange) -> List[Tuple[str, str]]:
 
 
 def link_rows(exchange: Exchange) -> List[Tuple[str, str]]:
-    """Links found in an HTML body — empty for anything else."""
+    """Links found in an HTML body, absolute — empty for anything else."""
     if not is_html(exchange):
         return []
-    return htmlreader.link_rows(exchange.text() or "")
+    return htmlreader.link_rows(exchange.text() or "", exchange.final_url or exchange.url)
 
 
 def redirect_rows(exchange: Exchange) -> List[Tuple[str, str]]:

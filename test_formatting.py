@@ -148,9 +148,17 @@ class RenderHtmlBodyTest(unittest.TestCase):
         self.assertEqual(rows["Images"], "1")
         self.assertEqual(rows["Headings"], "Welcome")
 
-    def test_links_are_listed(self):
-        self.assertEqual(link_rows(self.exchange), [("About us", "/about")])
+    def test_links_are_listed_absolute(self):
+        self.assertEqual(link_rows(self.exchange), [("About us", "https://example.com/about")])
         self.assertEqual(link_rows(make_exchange()), [])
+
+    def test_links_resolve_against_the_final_url_after_redirects(self):
+        exchange = make_exchange(
+            response_headers=[("Content-Type", "text/html")],
+            body=b'<a href="page">p</a>',
+            final_url="https://cdn.example.com/docs/",
+        )
+        self.assertEqual(link_rows(exchange)[0][1], "https://cdn.example.com/docs/page")
 
 
 class RenderMessagesTest(unittest.TestCase):

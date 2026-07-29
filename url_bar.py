@@ -6,6 +6,7 @@ import tkinter as tk
 from tkinter import ttk
 from typing import Callable, Optional
 
+import profiles
 import theme
 from fetcher import BODY_METHODS, METHODS
 from widgets import PlaceholderEntry
@@ -15,11 +16,19 @@ DEFAULT_CONTENT_TYPE = "application/json"
 
 
 class UrlBar(ttk.Frame):
-    def __init__(self, master, *, on_send: Callable[[], None], on_clear: Callable[[], None]):
+    def __init__(
+        self,
+        master,
+        *,
+        on_send: Callable[[], None],
+        on_clear: Callable[[], None],
+        profile: str = profiles.DEFAULT_PROFILE,
+    ):
         super().__init__(master, padding=(14, 12, 14, 6))
         self._on_send = on_send
         self._method = tk.StringVar(value="GET")
         self._content_type = tk.StringVar(value=DEFAULT_CONTENT_TYPE)
+        self._profile = tk.StringVar(value=profile)
         self._status = tk.StringVar(value="ready")
 
         address = self._address = ttk.Frame(self)
@@ -73,6 +82,22 @@ class UrlBar(ttk.Frame):
         self._dot.pack(side="left", padx=(0, 8))
         ttk.Label(status_row, textvariable=self._status, style="Muted.TLabel").pack(side="left")
 
+        # Which client we present ourselves as — servers vary the response on it.
+        self._profile_note = ttk.Label(status_row, text="", style="Muted.TLabel")
+        profile_box = ttk.Combobox(
+            status_row,
+            textvariable=self._profile,
+            values=profiles.names(),
+            state="readonly",
+            width=16,
+            font=theme.fonts().mono_small,
+        )
+        profile_box.pack(side="right")
+        profile_box.bind("<<ComboboxSelected>>", lambda _event: self._show_profile_note())
+        ttk.Label(status_row, text="send as", style="Muted.TLabel").pack(side="right", padx=(12, 6))
+        self._profile_note.pack(side="right", padx=(0, 12))
+        self._show_profile_note()
+
     # -- values ------------------------------------------------------------
 
     def method(self) -> str:
@@ -83,6 +108,9 @@ class UrlBar(ttk.Frame):
 
     def set_url(self, url: str) -> None:
         self.url_entry.set_value(url)
+
+    def profile(self) -> str:
+        return self._profile.get()
 
     def content_type(self) -> str:
         return self._content_type.get().strip()
@@ -115,6 +143,10 @@ class UrlBar(ttk.Frame):
     def _send_now(self) -> None:
         if str(self._send.cget("state")) != "disabled":
             self._on_send()
+
+    def _show_profile_note(self) -> None:
+        count = len(profiles.headers_for(self.profile(), url="https://example.com/"))
+        self._profile_note.configure(text="%d headers" % count)
 
     def _sync_body_editor(self) -> None:
         if self.method() in BODY_METHODS:

@@ -126,6 +126,19 @@ class DetailView(ttk.Frame):
         pane = ttk.Frame(master, padding=(0, 8, 0, 0))
         self._links = KeyValueTable(pane, "TEXT", "HREF", key_width=260)
         self._links.pack(fill="both", expand=True)
+        self._links.tree.bind("<Double-1>", lambda _event: self.copy_link())
+        self._links.tree.bind("<Return>", lambda _event: self.copy_link())
+
+        actions = ttk.Frame(pane, padding=(0, 8, 0, 0))
+        actions.pack(fill="x")
+        ttk.Label(
+            actions, text="double-click a row to copy its link", style="Muted.TLabel"
+        ).pack(side="left")
+        self._copy_all = ttk.Button(actions, text="Copy all", command=self.copy_all_links)
+        self._copy_all.pack(side="right")
+        ttk.Button(actions, text="Copy link", style="Accent.TButton", command=self.copy_link).pack(
+            side="right", padx=(0, 8)
+        )
         return pane
 
     def _build_raw(self, master) -> ttk.Frame:
@@ -191,6 +204,22 @@ class DetailView(ttk.Frame):
             view.set_content("")
 
     # -- actions -----------------------------------------------------------
+
+    def copy_link(self) -> None:
+        """Copy the selected link; the table already holds absolute URLs."""
+        row = self._links.selected_row()
+        if row is None:
+            rows = self._links.rows()
+            if not rows:
+                return
+            self._links.tree.selection_set(self._links.tree.get_children()[0])
+            row = rows[0]
+        self._on_copy(row[1])
+
+    def copy_all_links(self) -> None:
+        rows = self._links.rows()
+        if rows:
+            self._on_copy("\n".join(href for _, href in rows))
 
     def copy_curl(self) -> None:
         if self._exchange is not None:
