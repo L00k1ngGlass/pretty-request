@@ -136,6 +136,18 @@ def render_response(exchange: Exchange) -> str:
     return "\n".join(lines)
 
 
+def render_submission_curl(submission) -> str:
+    """A curl command for a form the user filled in but has not sent yet."""
+    parts = ["curl -X %s %s" % (submission.method, shlex.quote(submission.url))]
+    if submission.referer:
+        parts.append("-H %s" % shlex.quote("Referer: %s" % submission.referer))
+    if submission.content_type:
+        parts.append("-H %s" % shlex.quote("Content-Type: %s" % submission.content_type))
+    if submission.body:
+        parts.append("--data-raw %s" % shlex.quote(submission.body.decode("utf-8", "replace")))
+    return " \\\n  ".join(parts)
+
+
 def render_curl(exchange: Exchange) -> str:
     """A curl command that would repeat this request."""
     parts = ["curl -X %s %s" % (exchange.method, shlex.quote(exchange.url))]

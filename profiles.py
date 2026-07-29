@@ -192,32 +192,57 @@ def headers_for(
     content_type: str = "",
     body: Optional[bytes] = None,
     referer: str = "",
+    navigation: Optional[bool] = None,
 ) -> List[Header]:
     """Build the ordered header list for one request.
 
-    Host comes first, as it does on the wire. A request that carries a body is
-    treated as a script-initiated fetch rather than a navigation, which is what
-    a browser would really be doing at that point.
+    Host comes first, as it does on the wire. By default a request carrying a
+    body is treated as a script-initiated fetch; pass ``navigation=True`` for a
+    submitted form, which is a document navigation even when it POSTs.
     """
     chosen = PROFILES.get(profile) or PROFILES[DEFAULT_PROFILE]
     parts = urlsplit(url)
-    navigating = method.upper() in NAVIGATION_METHODS and body is None
+    origin = "%s://%s" % (parts.scheme, parts.netloc)
+    if navigation is None:
+        navigation = method.upper() in NAVIGATION_METHODS and body is None
+    # POST always carries an Origin; a plain GET navigation does not.
+    sends_origin = body is not None or not navigation
+    site = _site_for(origin, referer, navigation)
 
     headers: List[Header] = [("Host", parts.netloc)]
     for name, value in chosen.navigation:
-        if navigating:
-            headers.append((name, value))
-            continue
-        if name in _NAVIGATION_ONLY:
+        if not navigation and name in _NAVIGATION_ONLY:
             continue
         if name == "Sec-Fetch-Site":
-            # A cross-origin fetch announces its own page's origin first.
-            headers.append(("Origin", "%s://%s" % (parts.scheme, parts.netloc)))
-        headers.append((name, _FETCH_SWAPS.get(name, value)))
+            if sends_origin:
+                headers.append(("Origin", origin))
+            headers.append((name, site))
+            continue
+        headers.append((name, value if navigation else _FETCH_SWAPS.get(name, value)))
 
     if referer:
-        headers.append(("Referer", referer))
+        _insert_referer(headers, referer)
     if body is not None:
         headers.append(("Content-Type", content_type or "application/octet-stream"))
         headers.append(("Content-Length", str(len(body))))
     return headers
+
+
+def _site_for(origin: str, referer: str, navigation: bool) -> str:
+    """`Sec-Fetch-Site` describes where the request came from, not where it goes."""
+    if not referer:
+        # Typed into the address bar; a script request has to claim an origin.
+        return "none" if navigation else "same-origin"
+    referring = urlsplit(referer)
+    if "%s://%s" % (referring.scheme, referring.netloc) == origin:
+        return "same-origin"
+    return "cross-site"
+
+
+def _insert_referer(headers: List[Header], referer: str) -> None:
+    """Browsers put Referer just after the Sec-Fetch block."""
+    for position, (name, _) in enumerate(headers):
+        if name == "Sec-Fetch-Dest":
+            headers.insert(position + 1, ("Referer", referer))
+            return
+    headers.append(("Referer", referer))

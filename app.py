@@ -52,7 +52,7 @@ class App(tk.Tk):
         panes = ttk.PanedWindow(self, orient="horizontal")
         panes.pack(fill="both", expand=True, padx=14, pady=(6, 14))
         self.history = History(panes, on_select=self.detail_show)
-        self.detail = DetailView(panes, on_copy=self.copy)
+        self.detail = DetailView(panes, on_copy=self.copy, on_submit=self.send_submission)
         panes.add(self.history, weight=2)
         panes.add(self.detail, weight=3)
 
@@ -77,28 +77,62 @@ class App(tk.Tk):
             self.url_bar.set_status(str(error), theme.ERROR)
             return
 
+        self._start(
+            self.url_bar.method(), url, self.url_bar.body(), self.url_bar.content_type()
+        )
+
+    def send_submission(self, submission) -> None:
+        """Send a form the user filled in on the Forms tab.
+
+        A submitted form is a document navigation even when it POSTs, and it
+        carries the page it came from as the Referer — so say so.
+        """
+        self.url_bar.set_url(submission.url)
+        self.url_bar.set_method(submission.method)
+        self._start(
+            submission.method,
+            submission.url,
+            submission.body,
+            submission.content_type,
+            referer=submission.referer,
+            navigation=True,
+        )
+        if submission.skipped:
+            self.url_bar.set_status("submitted; skipped %s" % ", ".join(submission.skipped), theme.ACCENT)
+
+    def _start(
+        self,
+        method: str,
+        url: str,
+        body: Optional[bytes],
+        content_type: str,
+        *,
+        referer: str = "",
+        navigation: Optional[bool] = None,
+    ) -> None:
         self._seq += 1
         self._inflight += 1
         self.url_bar.set_busy(True)
-        self.url_bar.set_status("sending %s %s…" % (self.url_bar.method(), url), theme.ACCENT)
-
-        thread = threading.Thread(
+        self.url_bar.set_status("sending %s %s…" % (method, url), theme.ACCENT)
+        threading.Thread(
             target=self._work,
-            args=(
-                self._seq,
-                self.url_bar.method(),
-                url,
-                self.url_bar.body(),
-                self.url_bar.content_type(),
-                self.url_bar.profile(),
-            ),
+            args=(self._seq, method, url, body, content_type, self.url_bar.profile()),
+            kwargs={"referer": referer, "navigation": navigation},
             name="fetch-%d" % self._seq,
             daemon=True,
-        )
-        thread.start()
+        ).start()
 
     def _work(
-        self, seq: int, method: str, url: str, body: Optional[bytes], content_type: str, profile: str
+        self,
+        seq: int,
+        method: str,
+        url: str,
+        body: Optional[bytes],
+        content_type: str,
+        profile: str,
+        *,
+        referer: str = "",
+        navigation: Optional[bool] = None,
     ) -> None:
         self._inbox.put(
             fetcher.fetch(
@@ -109,6 +143,8 @@ class App(tk.Tk):
                 content_type=content_type,
                 timeout=self._timeout,
                 profile=profile,
+                referer=referer,
+                navigation=navigation,
             )
         )
 
