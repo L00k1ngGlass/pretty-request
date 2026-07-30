@@ -9,6 +9,7 @@ from typing import Callable, Optional
 import profiles
 import theme
 from fetcher import BODY_METHODS, METHODS
+from header_editor import HeaderEditor
 from widgets import PlaceholderEntry
 
 PLACEHOLDER = "example.com  ·  type an address and press Enter"
@@ -48,10 +49,15 @@ class UrlBar(ttk.Frame):
         self._send = ttk.Button(address, text="Send", style="Accent.TButton", command=self._send_now)
         self._send.pack(side="right", padx=(10, 0))
         ttk.Button(address, text="Clear", command=on_clear).pack(side="right", padx=(10, 0))
+        self._headers_button = ttk.Button(address, text="Headers", command=self._toggle_headers)
+        self._headers_button.pack(side="right", padx=(10, 0))
 
         self.url_entry = PlaceholderEntry(address, PLACEHOLDER, style="URL.TEntry")
         self.url_entry.pack(side="left", fill="x", expand=True, padx=(10, 0))
         self.url_entry.bind("<Return>", lambda _event: self._send_now())
+
+        # Hidden until the Headers button is pressed; the rows survive either way.
+        self.headers_editor = HeaderEditor(self, on_change=self._show_profile_note)
 
         # Only shown for methods that carry a body.
         self._body_editor = ttk.Frame(self, padding=(0, 8, 0, 0))
@@ -109,6 +115,12 @@ class UrlBar(ttk.Frame):
     def set_url(self, url: str) -> None:
         self.url_entry.set_value(url)
 
+    def extra_headers(self):
+        return self.headers_editor.overrides()
+
+    def drop_headers(self):
+        return self.headers_editor.removals()
+
     def set_method(self, method: str) -> None:
         self._method.set(method.upper())
         self._sync_body_editor()
@@ -148,9 +160,31 @@ class UrlBar(ttk.Frame):
         if str(self._send.cget("state")) != "disabled":
             self._on_send()
 
+    def _toggle_headers(self) -> None:
+        if self.headers_editor.winfo_manager():
+            self.headers_editor.pack_forget()
+        else:
+            self.headers_editor.pack(fill="x", after=self._address)
+        self._show_profile_note()
+
     def _show_profile_note(self) -> None:
-        count = len(profiles.headers_for(self.profile(), url="https://example.com/"))
-        self._profile_note.configure(text="%d headers" % count)
+        count = len(
+            profiles.headers_for(
+                self.profile(),
+                url="https://example.com/",
+                extra=self.extra_headers(),
+                remove=self.drop_headers(),
+            )
+        )
+        custom = self.headers_editor.count()
+        text = "%d headers" % count
+        if custom:
+            text += " · %d custom" % custom
+        rejected = self.headers_editor.rejected()
+        if rejected:
+            text += " · %s set by urllib" % ", ".join(sorted(set(rejected)))
+        self._profile_note.configure(text=text)
+        self._headers_button.configure(text="Headers (%d)" % custom if custom else "Headers")
 
     def _sync_body_editor(self) -> None:
         if self.method() in BODY_METHODS:

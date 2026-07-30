@@ -117,7 +117,12 @@ class App(tk.Tk):
         threading.Thread(
             target=self._work,
             args=(self._seq, method, url, body, content_type, self.url_bar.profile()),
-            kwargs={"referer": referer, "navigation": navigation},
+            kwargs={
+                "referer": referer,
+                "navigation": navigation,
+                "extra_headers": self.url_bar.extra_headers(),
+                "drop_headers": self.url_bar.drop_headers(),
+            },
             name="fetch-%d" % self._seq,
             daemon=True,
         ).start()
@@ -133,6 +138,8 @@ class App(tk.Tk):
         *,
         referer: str = "",
         navigation: Optional[bool] = None,
+        extra_headers=(),
+        drop_headers=(),
     ) -> None:
         self._inbox.put(
             fetcher.fetch(
@@ -145,6 +152,8 @@ class App(tk.Tk):
                 profile=profile,
                 referer=referer,
                 navigation=navigation,
+                extra_headers=extra_headers,
+                drop_headers=drop_headers,
             )
         )
 

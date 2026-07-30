@@ -43,6 +43,8 @@ class _TargetHandler(BaseHTTPRequestHandler):
             "body": self.rfile.read(length).decode(),
             "content_type": self.headers.get("Content-Type"),
             "user_agent": self.headers.get("User-Agent"),
+            "authorization": self.headers.get("Authorization"),
+            "accept": self.headers.get("Accept"),
         }
         self._send(201, json.dumps(echo).encode(), "application/json")
 
@@ -128,6 +130,18 @@ class FetchTest(unittest.TestCase):
         self.assertIn("Sec-Ch-Ua", names)
         self.assertNotIn("sec-ch-ua", names)
         self.assertEqual(exchange.request_headers[-1], ("Connection", "close"))
+
+    def test_custom_headers_reach_the_server(self):
+        exchange = fetch(
+            "POST", self.base + "/echo", body=b"{}", profile="curl",
+            extra_headers=[("Authorization", "Bearer t0ken"), ("User-Agent", "MyBot/1.0")],
+            drop_headers=["Accept"],
+        )
+        echoed = json.loads(exchange.body)
+        self.assertEqual(echoed["user_agent"], "MyBot/1.0")  # override won
+        self.assertEqual(echoed["authorization"], "Bearer t0ken")  # addition arrived
+        self.assertIsNone(echoed["accept"])  # removal took effect
+        self.assertEqual(exchange.request_header("Authorization"), "Bearer t0ken")
 
     def test_the_server_sees_the_profile(self):
         exchange = fetch("POST", self.base + "/echo", body=b"{}", profile="Firefox (macOS)")
