@@ -54,6 +54,27 @@ and [profiles.py](profiles.py) models that: a typed-in address is a navigation
 `Origin` header, `Accept: */*`, `Priority: u=1, i`, and no navigation-only
 headers).
 
+### Your own headers
+
+The **Headers** button opens an editor of name/value rows that layer over the
+chosen profile. Each row has a checkbox, so you can park a header without
+deleting it, and the rows persist between requests.
+
+| Row | Effect |
+|---|---|
+| a name the profile does not send | appended, e.g. `Authorization: Bearer …` |
+| a name the profile already sends | replaced **in place**, keeping the browser's header order |
+| a name with a **blank value** | that header is dropped from the request entirely |
+| an unchecked row | ignored |
+
+Matching is case-insensitive, so `user-agent` overrides the profile's
+`User-Agent` rather than sending a second one, and if you list the same name
+twice the last value wins.
+
+`Host` and `Content-Length` are refused: urllib derives them from the URL and the
+body and silently ignores anything you set, so the editor says "set by urllib"
+instead of pretending. Everything else, including `Content-Type`, is yours.
+
 Three deliberate deviations, all visible in the Request tab, which shows what
 went on the wire rather than what we asked for:
 
@@ -152,13 +173,14 @@ dialog box.
 |---|---|
 | [app.py](app.py) | window, worker threads, queue draining |
 | [fetcher.py](fetcher.py) | URL normalisation, the actual request, decompression |
-| [profiles.py](profiles.py) | browser header profiles and Sec-Fetch semantics |
+| [profiles.py](profiles.py) | browser header profiles, Sec-Fetch semantics, custom-header layering |
 | [exchange.py](exchange.py) | the `Exchange` value object |
 | [formatting.py](formatting.py) | pure rendering helpers (body, raw, cURL, summary, filter) |
 | [htmlreader.py](htmlreader.py) | HTML text extraction, page metadata, source colouring |
 | [forms.py](forms.py) | form parsing and the successful-control submission rules |
 | [theme.py](theme.py) | palette, status colours, fonts, ttk styles |
 | [url_bar.py](url_bar.py), [history.py](history.py), [detail.py](detail.py) | the three panes |
+| [header_editor.py](header_editor.py) | the custom header rows |
 | [widgets.py](widgets.py) | shared Tk building blocks |
 
 Each request runs on its own daemon thread and comes back to the GUI through a
@@ -176,5 +198,5 @@ and what was actually transferred.
 python -m unittest discover -p "test_*.py"
 ```
 
-108 tests: the formatting, HTML, form and profile helpers run offline, and the
-fetcher tests drive a throwaway `http.server` on localhost.
+117 tests: the formatting, HTML, form and header-profile helpers run offline, and
+the fetcher tests drive a throwaway `http.server` on localhost.

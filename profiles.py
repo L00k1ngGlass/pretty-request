@@ -24,7 +24,7 @@ what we can actually decode. Ask for what you can read.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 from urllib.parse import urlsplit
 
 Header = Tuple[str, str]
@@ -162,6 +162,10 @@ PROFILES: Dict[str, Profile] = {
 DEFAULT_PROFILE = "Chrome (macOS)"
 NAVIGATION_METHODS = ("GET", "HEAD")
 
+# urllib owns these two: Host comes from the URL and Content-Length from the
+# body, and anything we set is ignored. Better to refuse than to lie about it.
+PROTECTED_HEADERS = ("host", "content-length")
+
 # Swapped in when the request is not a top-level navigation — i.e. what the same
 # browser sends from fetch()/XHR. Order within the header list is preserved.
 _FETCH_SWAPS = {
@@ -193,12 +197,18 @@ def headers_for(
     body: Optional[bytes] = None,
     referer: str = "",
     navigation: Optional[bool] = None,
+    extra: Sequence[Header] = (),
+    remove: Iterable[str] = (),
 ) -> List[Header]:
     """Build the ordered header list for one request.
 
     Host comes first, as it does on the wire. By default a request carrying a
     body is treated as a script-initiated fetch; pass ``navigation=True`` for a
     submitted form, which is a document navigation even when it POSTs.
+
+    ``extra`` overrides a profile header in place, keeping the browser's
+    position, or is appended when the name is new. ``remove`` drops headers the
+    profile would otherwise send. Both ignore :data:`PROTECTED_HEADERS`.
     """
     chosen = PROFILES.get(profile) or PROFILES[DEFAULT_PROFILE]
     parts = urlsplit(url)
@@ -225,7 +235,37 @@ def headers_for(
     if body is not None:
         headers.append(("Content-Type", content_type or "application/octet-stream"))
         headers.append(("Content-Length", str(len(body))))
-    return headers
+    return _customize(headers, extra, remove)
+
+
+def _customize(
+    headers: List[Header], extra: Sequence[Header], remove: Iterable[str]
+) -> List[Header]:
+    """Layer the user's own headers over the profile's."""
+    overrides: Dict[str, str] = {}
+    for name, value in extra:  # a repeated name: the last one wins
+        if name.lower() not in PROTECTED_HEADERS:
+            overrides[name.lower()] = value
+    dropped = {name.lower() for name in remove if name.lower() not in PROTECTED_HEADERS}
+
+    result: List[Header] = []
+    applied = set()
+    for name, value in headers:
+        key = name.lower()
+        if key in dropped:
+            continue
+        if key in overrides:
+            result.append((name, overrides[key]))  # keep the browser's position
+            applied.add(key)
+            continue
+        result.append((name, value))
+
+    for name, _ in extra:
+        key = name.lower()
+        if key not in applied and key not in dropped and key not in PROTECTED_HEADERS:
+            result.append((name, overrides[key]))  # the last value given for this name
+            applied.add(key)
+    return result
 
 
 def _site_for(origin: str, referer: str, navigation: bool) -> str:

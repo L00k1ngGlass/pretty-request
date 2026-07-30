@@ -125,6 +125,58 @@ class ScriptedRequestTest(unittest.TestCase):
         self.assertEqual(as_dict(headers)["referer"], "https://example.com/")
 
 
+class CustomHeaderTest(unittest.TestCase):
+    def test_new_header_is_appended(self):
+        headers = headers_for("curl", url=URL, extra=[("Authorization", "Bearer t0ken")])
+        self.assertEqual(headers[-1], ("Authorization", "Bearer t0ken"))
+        self.assertEqual(as_dict(headers)["authorization"], "Bearer t0ken")
+
+    def test_override_replaces_in_place_keeping_browser_order(self):
+        plain = header_names(headers_for("Chrome (macOS)", url=URL))
+        headers = headers_for("Chrome (macOS)", url=URL, extra=[("Accept-Language", "de-DE,de;q=0.9")])
+        self.assertEqual(header_names(headers), plain)  # nothing moved, nothing added
+        self.assertEqual(as_dict(headers)["accept-language"], "de-DE,de;q=0.9")
+
+    def test_override_matches_case_insensitively(self):
+        headers = headers_for("curl", url=URL, extra=[("user-agent", "MyBot/1.0")])
+        self.assertEqual(as_dict(headers)["user-agent"], "MyBot/1.0")
+        self.assertEqual(len(headers), len(headers_for("curl", url=URL)))
+
+    def test_removal_drops_a_profile_header(self):
+        headers = headers_for("Chrome (macOS)", url=URL, remove=["Priority", "sec-ch-ua-mobile"])
+        names = [name.lower() for name in header_names(headers)]
+        self.assertNotIn("priority", names)
+        self.assertNotIn("sec-ch-ua-mobile", names)
+
+    def test_removal_beats_an_override_of_the_same_name(self):
+        headers = headers_for("curl", url=URL, extra=[("Accept", "text/plain")], remove=["accept"])
+        self.assertNotIn("accept", as_dict(headers))
+
+    def test_last_value_wins_for_a_repeated_name(self):
+        headers = headers_for("curl", url=URL, extra=[("X-Try", "one"), ("x-try", "two")])
+        self.assertEqual(as_dict(headers)["x-try"], "two")
+        self.assertEqual(sum(1 for name, _ in headers if name.lower() == "x-try"), 1)
+
+    def test_protected_headers_cannot_be_set_or_removed(self):
+        headers = headers_for(
+            "curl", url=URL, method="POST", body=b"x", content_type="text/plain",
+            extra=[("Host", "evil.example"), ("Content-Length", "999")],
+            remove=["Host", "content-length"],
+        )
+        lookup = as_dict(headers)
+        self.assertEqual(lookup["host"], "example.com")  # from the URL, as urllib insists
+        self.assertEqual(lookup["content-length"], "1")  # from the body
+        self.assertEqual(sum(1 for name, _ in headers if name.lower() == "host"), 1)
+
+    def test_content_type_can_be_overridden_in_place(self):
+        headers = headers_for(
+            "curl", url=URL, method="POST", body=b"{}", content_type="application/json",
+            extra=[("Content-Type", "application/graphql")],
+        )
+        self.assertEqual(as_dict(headers)["content-type"], "application/graphql")
+        self.assertEqual(sum(1 for name, _ in headers if name.lower() == "content-type"), 1)
+
+
 class FormSubmissionTest(unittest.TestCase):
     """A submitted form is a navigation, even when it POSTs."""
 

@@ -10,7 +10,7 @@ import zlib
 import urllib.error
 import urllib.request
 from datetime import datetime
-from typing import List, Optional, Tuple
+from typing import Iterable, List, Optional, Sequence, Tuple
 from urllib.parse import urlsplit, urlunsplit
 
 import profiles
@@ -80,6 +80,8 @@ def fetch(
     profile: str = profiles.DEFAULT_PROFILE,
     referer: str = "",
     navigation: Optional[bool] = None,
+    extra_headers: Sequence[Tuple[str, str]] = (),
+    drop_headers: Iterable[str] = (),
 ) -> Exchange:
     """Send one request and return the resulting :class:`Exchange`.
 
@@ -97,6 +99,8 @@ def fetch(
         body=body,
         referer=referer,
         navigation=navigation,
+        extra=extra_headers,
+        remove=drop_headers,
     )
     headers = _wire_headers(wanted)
 
